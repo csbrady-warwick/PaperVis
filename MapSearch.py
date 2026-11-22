@@ -14,10 +14,10 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-from pyalex_cache import pyalex_cache
+from openalex_cli import open_cache
+from utils import search_works
+from search_cli import make_search_parser
 import sys
-import datetime
-import argparse
 import plotly.graph_objects as go
 
 def plot_map(data, output_path, search_term, from_date, to_date):
@@ -107,41 +107,11 @@ def plot_map(data, output_path, search_term, from_date, to_date):
 
     print(f"Map written to {output_path}")
 
-if __name__ == "__main__":
-    c=pyalex_cache()
-
-    #Get command line arguments
-    # 1 positional argument is the search term
-    # keyword arguments are
-    # 1) from - from_publication_date default 1 year ago
-    # 2) to - to_publication_date default today
-    # 3) use_cache - if set to 1, will use the cache, if set to 0, will not use the cache default 1
-    # 4) output - The output filename for the generated map. default is map.html
-    # 5) apikey - The OpenAlex API key. default is no key
-    # 6) cache_file - The filename of the cache. default is cache.json.gz
-
-    #Parse keyword arguments using argparse
-    parser = argparse.ArgumentParser()
-
-    #Positional argument for search term
-    parser.add_argument("search_term", help="Search term for OpenAlex works. Example: 'GEANT4'")
-
-    parser.add_argument("--from", dest="from_date", default=(datetime.datetime.now() - datetime.timedelta(days=365)).strftime("%Y-%m-%d"), help="From publication date in YYYY-MM-DD format. Default is 1 year ago.")
-    parser.add_argument("--to", dest="to_date", default=datetime.datetime.now().strftime("%Y-%m-%d"), help="To publication date in YYYY-MM-DD format. Default is today.")
-    parser.add_argument("--use_cache", dest="use_cache", type=int, default=1, help="Use cache. 1 to use cache, 0 to not use cache. Default is 1.")
-    parser.add_argument("--output", dest="output_file", default="map.html", help="Output filename for the generated map. Default is map.html.")
-    parser.add_argument("--apikey", dest="apikey", default=None, help="OpenAlex API key. Default is no key.")
-    parser.add_argument("--cache_file", dest="cache_file", default="cache.json.gz", help="Filename of the cache. Default is cache.json.gz.")
-    args = parser.parse_args()
-
-    if args.use_cache:
-        c.loadCache(args.cache_file)
-
-    if args.apikey:
-        c.setAPIKey(args.apikey)
-
-
-    items = c.searchWorks(args.search_term, {"from_publication_date":args.from_date,"to_publication_date":args.to_date})
+def institution_counts(c, search_term, from_date, to_date):
+    """
+    Count matching works per institution, with each institution's name and location.
+    """
+    items = search_works(c, search_term, from_date, to_date)
     imap={}
     for item in items:
         #Count each institution at most once per paper
@@ -153,12 +123,57 @@ if __name__ == "__main__":
                     continue
                 seen.add(id)
                 if (id not in imap):
-                    try:
-                        instData = c.getInstitution(id)
-                    except Exception:
-                        instData={}
-                    imap[id]=[0,institution['display_name'], instData.get('geo')]
+                    imap[id]=[0,institution['display_name'], None]
                 imap[id][0]=imap[id][0]+1
+    #Look up each institution's location
+    institutions = c.getInstitutions(list(imap))
+    for id in imap:
+        imap[id][2]=institutions[id]['geo'] if institutions[id] else None
+    return imap
+
+def views(c, search_term, from_date, to_date, options):
+    """
+    Return descriptions of this tool's results for display.
+    """
+    imap = institution_counts(c, search_term, from_date, to_date)
+    rows = []
+    for id, value in sorted(imap.items(), key=lambda item: item[1][0], reverse=True):
+        rows.append([value[1], value[0], id])
+    return [
+        {"kind": "institution_map",
+         "title": f"Institutions publishing papers containing '{search_term}' from {from_date} to {to_date}",
+         "data": imap},
+        {"kind": "table", "header": ["Institution", "Works", "OpenAlex ID"],
+         "types": [None, None, "asLink"], "rows": rows},
+    ]
+
+TOOL = {
+    "name": "map",
+    "label": "Institution map",
+    "input": "search",
+    "options": [],
+    "views": views,
+}
+
+if __name__ == "__main__":
+    #Get command line arguments
+    # 1 positional argument is the search term
+    # keyword arguments are
+    # 1) from - from_publication_date default 1 year ago
+    # 2) to - to_publication_date default today
+    # 3) use_cache - if set to 1, will use the cache, if set to 0, will not use the cache default 1
+    # 4) output - The output filename for the generated map. default is map.html
+    # 5) apikey - The OpenAlex API key. default is no key
+    # 6) cache_file - The filename of the cache. default is cache.json.gz
+
+    #Parse keyword arguments using argparse
+    parser = make_search_parser()
+    parser.set_defaults(output_file="map.html")
+    args = parser.parse_args()
+
+    c = open_cache(args)
+
+    imap = institution_counts(c, args.search_term, args.from_date, args.to_date)
     if args.use_cache:
         c.saveCache(args.cache_file)
 

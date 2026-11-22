@@ -13,10 +13,10 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-from pyalex_cache import pyalex_cache
+from openalex_cli import CHECKBOX, add_options, open_cache
+from utils import search_works
+from search_cli import make_search_parser
 import sys
-import datetime
-import argparse
 import matplotlib.pyplot as plt
 
 def combine_small_entries(data, threshold):
@@ -55,16 +55,56 @@ def plot_pie_chart(data, output_path, from_date, to_date, search_term):
         startangle=140,
     )
     ax.axis("equal")
-    ax.set_title(f"Research Field Usage Distribution for papers containing '{search_term}' in the tile or abstract from {from_date} to {to_date}")
+    ax.set_title(f"Research Field Usage Distribution for papers containing '{search_term}' in the title or abstract from {from_date} to {to_date}")
 
     plt.tight_layout()
 
     plt.savefig(output_path, dpi=150)
     print(f"Chart saved to {output_path}")
 
-if __name__ == "__main__":
-    c=pyalex_cache()
+def field_counts(c, search_term, from_date, to_date):
+    """
+    Count matching works by their primary topic.
+    """
+    items = search_works(c, search_term, from_date, to_date)
+    imap={}
+    for item in items:
+        if not item.get('primary_topic',None):continue
+        id = item['primary_topic']['display_name']
+        if not id in imap: imap[id]=0
+        imap[id]=imap[id]+1
+    return imap
 
+def views(c, search_term, from_date, to_date, options):
+    """
+    Return descriptions of this tool's results for display.
+    """
+    counts = combine_small_entries(field_counts(c, search_term, from_date, to_date), options["threshold"])
+    if options["show_other"] == 0:
+        counts.pop("Other", None)
+    ordered = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    return [
+        {"kind": "pie", "title": f"Research fields of papers containing '{search_term}' from {from_date} to {to_date}",
+         "data": counts},
+        {"kind": "table", "header": ["Field", "Works"], "rows": ordered},
+    ]
+
+TOOL = {
+    "name": "pie",
+    "label": "Field pie chart",
+    "input": "search",
+    "options": [
+        {"name": "threshold", "label": "Fraction below which fields are grouped as Other",
+         "help": "Threshold for combining small entries into 'Other'. Default is 0.02 (2%).",
+         "default": 0.02, "type": float, "choices": None},
+        {"name": "show_other", "label": "Show Other",
+         "help": "Show 'Other' category in the pie chart. 1 to show, 0 to not show. Default is 1.",
+         "default": 1, "type": int, "choices": CHECKBOX},
+    ],
+    "views": views,
+}
+
+if __name__ == "__main__":
     #Get command line arguments
     # 1 positional argument is the search term
     # keyword arguments are
@@ -78,40 +118,20 @@ if __name__ == "__main__":
     # 8) show_other - If set to 1, will show the "Other" category in the pie chart. If set to 0, will not show the "Other" category. Default is 1.
 
     #Parse keyword arguments using argparse
-    parser = argparse.ArgumentParser()
+    parser = make_search_parser()
+    parser.set_defaults(output_file="pie.png")
 
-    #Positional argument for search term
-    parser.add_argument("search_term", help="Search term for OpenAlex works. Example: 'GEANT4'")
-
-    parser.add_argument("--from", dest="from_date", default=(datetime.datetime.now() - datetime.timedelta(days=365)).strftime("%Y-%m-%d"), help="From publication date in YYYY-MM-DD format. Default is 1 year ago.")
-    parser.add_argument("--to", dest="to_date", default=datetime.datetime.now().strftime("%Y-%m-%d"), help="To publication date in YYYY-MM-DD format. Default is today.")
-    parser.add_argument("--use_cache", dest="use_cache", type=int, default=1, help="Use cache. 1 to use cache, 0 to not use cache. Default is 1.")
-    parser.add_argument("--output", dest="output_file", default="pie.png", help="Output filename for the generated map. Default is pie.png.")
-    parser.add_argument("--apikey", dest="apikey", default=None, help="OpenAlex API key. Default is no key.")
-    parser.add_argument("--cache_file", dest="cache_file", default="cache.json.gz", help="Filename of the cache. Default is cache.json.gz.")
-    parser.add_argument("--threshold", dest="threshold", type=float, default=0.02, help="Threshold for combining small entries into 'Other'. Default is 0.02 (2%).")
-    parser.add_argument("--show_other", dest="show_other", type=int, default=1, help="Show 'Other' category in the pie chart. 1 to show, 0 to not show. Default is 1.")
+    add_options(parser, TOOL["options"])
     args = parser.parse_args()
 
-    if args.use_cache:
-        c.loadCache(args.cache_file)
+    c = open_cache(args)
 
-    if args.apikey:
-        c.setAPIKey(args.apikey)
-
-
-    items = c.searchWorks(args.search_term, {"from_publication_date":args.from_date,"to_publication_date":args.to_date})
-    imap={}
-    for item in items:
-        if not item.get('primary_topic',None):continue
-        id = item['primary_topic']['display_name']
-        if not id in imap: imap[id]=0
-        imap[id]=imap[id]+1
+    imap = field_counts(c, args.search_term, args.from_date, args.to_date)
     if args.use_cache:
         c.saveCache(args.cache_file)
 
+    imap = combine_small_entries(imap, args.threshold)
     if args.show_other == 0:
         # Remove the "Other" category if it exists
         imap.pop("Other", None)
-    imap = combine_small_entries(imap, args.threshold)
     plot_pie_chart(imap, args.output_file, args.from_date, args.to_date, args.search_term)

@@ -1,3 +1,5 @@
 pyalex
 plotly
 matplotlib
+networkx
+scipy
