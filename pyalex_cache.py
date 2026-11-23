@@ -47,101 +47,69 @@ import json
 import sys
 import os
 import datetime
-import gzip
 import sqlite3
 import zlib
 
-class CacheStore:
+#The table of records for each kind of OpenAlex object, by the pyalex class that fetches it
+CLIENT_TABLES = {Works: "works", Authors: "authors", Institutions: "institutions", Funders: "funders",
+                 Keywords: "keywords", Topics: "topics", Fields: "fields", Subfields: "subfields", Domains: "domains"}
+
+#The same tables by the part of a full OpenAlex ID that names the kind of object: its first letter, or the path before the number
+ID_TABLES = {"W": "works", "A": "authors", "I": "institutions", "F": "funders", "T": "topics",
+             "keywords": "keywords", "fields": "fields", "subfields": "subfields", "domains": "domains"}
+
+def tableFor(id):
+    """Return the table of records for the object with the given full OpenAlex ID."""
+    path = id.replace("https://openalex.org/", "")
+    if "/" in path:
+        return ID_TABLES[path.split("/")[0]]
+    return ID_TABLES[path[0]]
+
+def encode(value):
+    """Return a value as compressed JSON, as it is stored in the database."""
+    return zlib.compress(json.dumps(value).encode())
+
+def decode(stored):
+    """Return a value stored as compressed JSON."""
+    return json.loads(zlib.decompress(stored))
+
+class CacheDatabase:
     """
-    The cache's entries, used like a dictionary but kept in an SQLite database.
-    An entry is only read and decoded when it is first asked for, and changes
-    are held in memory until save is called, when only they are written.
+    The cache's SQLite database: a table of records for each kind of OpenAlex
+    object, each record kept once and exactly as OpenAlex returned it; the
+    searches made, the date ranges of each that are cached and the records
+    each range returned, in order; and other lookups, such as autocomplete
+    suggestions and identifiers that name nothing. Every change is committed
+    as it is made.
     """
 
     def __init__(self):
         self.connection = None
-        self.loaded = {}
-        self.dirty = set()
-        self.removed = set()
 
     def open(self, filename):
-        """Open the database, creating it if it does not exist."""
+        """Open the database, creating its tables if they do not exist."""
         #The dashboard's searches run in their own threads, one at a time
         self.connection = sqlite3.connect(filename, check_same_thread=False)
-        self.connection.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB)")
-
-    def read(self, key):
-        """Return whether an entry exists, and its value, reading it from the database if need be."""
-        if key in self.removed:
-            return False, None
-        if key in self.loaded:
-            return True, self.loaded[key]
-        if self.connection is None:
-            return False, None
-        row = self.connection.execute("SELECT value FROM cache WHERE key = ?", (key,)).fetchone()
-        if row is None:
-            return False, None
-        value = json.loads(zlib.decompress(row[0]))
-        self.loaded[key] = value
-        return True, value
+        #Write-ahead logging lets a second connection, such as the dashboard's lookups, work while a search writes
+        self.connection.execute("PRAGMA journal_mode=WAL")
+        with self.connection:
+            self.connection.execute("DROP TABLE IF EXISTS cache")
+            for table in set(ID_TABLES.values()):
+                self.connection.execute(f"CREATE TABLE IF NOT EXISTS {table} (id TEXT PRIMARY KEY, fetched TEXT, "
+                                        f"end_date TEXT, truncated INTEGER, record BLOB)")
+            self.connection.execute("CREATE TABLE IF NOT EXISTS searches (id INTEGER PRIMARY KEY, name TEXT UNIQUE)")
+            self.connection.execute("CREATE TABLE IF NOT EXISTS search_ranges (id INTEGER PRIMARY KEY, "
+                                    "search_id INTEGER REFERENCES searches(id), start_date TEXT, end_date TEXT, "
+                                    "created TEXT, stable_date TEXT)")
+            self.connection.execute("CREATE INDEX IF NOT EXISTS search_ranges_search ON search_ranges (search_id)")
+            self.connection.execute("CREATE TABLE IF NOT EXISTS search_results (range_id INTEGER REFERENCES search_ranges(id), "
+                                    "position INTEGER, record_id TEXT, PRIMARY KEY (range_id, position))")
+            self.connection.execute("CREATE TABLE IF NOT EXISTS lookups (key TEXT PRIMARY KEY, created TEXT, "
+                                    "end_date TEXT, value BLOB)")
 
     def __contains__(self, key):
-        found, value = self.read(key)
-        return found
-
-    def __getitem__(self, key):
-        found, value = self.read(key)
-        if not found:
-            raise KeyError(key)
-        return value
-
-    def get(self, key, default=None):
-        found, value = self.read(key)
-        if not found:
-            return default
-        return value
-
-    def __setitem__(self, key, value):
-        self.loaded[key] = value
-        self.dirty.add(key)
-        self.removed.discard(key)
-
-    def __delitem__(self, key):
-        if key not in self:
-            raise KeyError(key)
-        self.loaded.pop(key, None)
-        self.dirty.discard(key)
-        self.removed.add(key)
-
-    def pop(self, key, default=None):
-        found, value = self.read(key)
-        if not found:
-            return default
-        del self[key]
-        return value
-
-    def __iter__(self):
-        keys = set(self.loaded)
-        if self.connection is not None:
-            for (key,) in self.connection.execute("SELECT key FROM cache"):
-                keys.add(key)
-        keys = keys - self.removed
-        return iter(list(keys))
-
-    def update(self, other):
-        for key, value in other.items():
-            self[key] = value
-
-    def save(self):
-        """Write the entries changed or removed since the last save to the database."""
-        with self.connection:
-            for key in self.removed:
-                self.connection.execute("DELETE FROM cache WHERE key = ?", (key,))
-            for key in self.dirty:
-                value = zlib.compress(json.dumps(self.loaded[key]).encode())
-                self.connection.execute("INSERT OR REPLACE INTO cache (key, value) VALUES (?, ?)", (key, value))
-        self.dirty = set()
-        self.removed = set()
+        """Return whether a lookup with the given key is stored."""
+        return self.connection.execute("SELECT 1 FROM lookups WHERE key = ?", (key,)).fetchone() is not None
 
 class pyalex_cache:
 
@@ -155,9 +123,9 @@ class pyalex_cache:
         self.refreshed = set()
         #While set, only progress in these stages is reported, and searches are only counted if "search" is among them
         self.reportedStages = None
-        #Set whenever the cache is changed after loading, so that an unchanged cache is not saved again
-        self.changed = False
-        self.cache=CacheStore()
+        #Until a cache file is opened, the database is held in memory, so nothing is kept between runs
+        self.cache = CacheDatabase()
+        self.cache.open(":memory:")
         self.shortCache=datetime.timedelta(hours=1).total_seconds()
         self.longCache = datetime.timedelta(days=30).total_seconds()
         self.stableTime = datetime.timedelta(days=100).total_seconds()
@@ -167,87 +135,119 @@ class pyalex_cache:
         self.cache.open(filename)
 
     def saveCache(self, filename, force=False):
-        """Write the cache entries changed since the last save to the database, if any have changed or force is set."""
-        if not self.changed and not force:
-            return
-        self.cache.save()
-        self.changed = False
+        """Commit any change not yet written to the database; changes are normally committed as they are made."""
+        self.cache.connection.commit()
+
+    def isFresh(self, created, endDate, refreshTime, stableRefreshTime=None):
+        """
+        Return whether an entry stored at `created` (ISO text) is still fresh.
+        An entry whose data ends at `endDate` (ISO text, or None if unknown)
+        more than the stable time ago lasts for stableRefreshTime, if given,
+        and any other for refreshTime, both in seconds.
+        """
+        now = datetime.datetime.now()
+        refresh = refreshTime
+        if stableRefreshTime is not None and endDate is not None:
+            if (now - datetime.datetime.fromisoformat(endDate)).total_seconds() > self.stableTime:
+                refresh = stableRefreshTime
+        return (now - datetime.datetime.fromisoformat(created)).total_seconds() < refresh
 
     def getCache(self, cacheName, refreshTime, stableRefreshTime = None, force=False):
-        """Return a fresh exact-key cache entry, or None on a miss."""
+        """Return a fresh lookup, or None on a miss."""
         if force:
             return None
+        database = self.cache.connection
         if self.refresh and cacheName not in self.refreshed:
             self.refreshed.add(cacheName)
-            if cacheName in self.cache:
-                del self.cache[cacheName]
-                self.changed = True
+            with database:
+                database.execute("DELETE FROM lookups WHERE key = ?", (cacheName,))
             return None
-        if cacheName not in self.cache:
+        row = database.execute("SELECT created, end_date, value FROM lookups WHERE key = ?", (cacheName,)).fetchone()
+        if row is None:
             return None
-        co = self.cache[cacheName]
-        time = datetime.datetime.fromisoformat(co[0])
-        srf = stableRefreshTime
-        if stableRefreshTime == None: srf = refreshTime
-
-        stable = False
-        endDate = None
-        if co[1] is not None:
-            endDate = datetime.datetime.fromisoformat(co[1])
-        if endDate is not None:
-            if (datetime.datetime.now() - endDate).total_seconds() > self.stableTime:
-                stable=True
-
-        rt = refreshTime
-        if stable: rt = srf
-
-        if (datetime.datetime.now() - time).total_seconds() < rt:
-            return co[2]
-        del self.cache[cacheName]
-        self.changed = True
+        if self.isFresh(row[0], row[1], refreshTime, stableRefreshTime):
+            return decode(row[2])
+        with database:
+            database.execute("DELETE FROM lookups WHERE key = ?", (cacheName,))
         return None
+
+    def setCache(self, cacheName, data, endDate=None):
+        """Store a lookup under its key."""
+        with self.cache.connection:
+            self.cache.connection.execute("INSERT OR REPLACE INTO lookups (key, created, end_date, value) VALUES (?, ?, ?, ?)",
+                                          (cacheName, datetime.datetime.now().isoformat(), endDate, encode(data)))
+
+    def readRecord(self, table, id, refreshTime=None, stableRefreshTime=None, complete=False):
+        """
+        Return the record with the given full OpenAlex ID from `table`, or None
+        if it is not stored. If refreshTime is given, a record that is no longer
+        fresh counts as not stored, and if `complete` is set, so does a search
+        result whose author list was cut short.
+        """
+        if refreshTime is not None and self.refresh and (table, id) not in self.refreshed:
+            self.refreshed.add((table, id))
+            return None
+        row = self.cache.connection.execute(f"SELECT fetched, end_date, truncated, record FROM {table} WHERE id = ?",
+                                            (id,)).fetchone()
+        if row is None:
+            return None
+        if complete and row[2]:
+            return None
+        if refreshTime is not None and not self.isFresh(row[0], row[1], refreshTime, stableRefreshTime):
+            return None
+        return decode(row[3])
+
+    def storeRecord(self, record, truncated=False):
+        """
+        Store an OpenAlex record in the table for its kind, without committing.
+        A search result whose author list was cut short does not replace a
+        complete record.
+        """
+        table = tableFor(record['id'])
+        database = self.cache.connection
+        if truncated:
+            row = database.execute(f"SELECT truncated FROM {table} WHERE id = ?", (record['id'],)).fetchone()
+            if row is not None and not row[0]:
+                return
+        endDate = record.get('publication_date') or record.get('created_date')
+        database.execute(f"INSERT OR REPLACE INTO {table} (id, fetched, end_date, truncated, record) VALUES (?, ?, ?, ?, ?)",
+                         (record['id'], datetime.datetime.now().isoformat(), endDate, 1 if truncated else 0, encode(record)))
+
+    def deleteRange(self, rangeId):
+        """Remove a cached date range of a search and the list of what it returned, without committing."""
+        self.cache.connection.execute("DELETE FROM search_results WHERE range_id = ?", (rangeId,))
+        self.cache.connection.execute("DELETE FROM search_ranges WHERE id = ?", (rangeId,))
 
     def getRangeCache(self, cacheName, startDate, endDate, refreshTime,
                       stableRefreshTime=None, force=False):
-        """Return fresh cached data for the request and the date ranges it does not cover."""
+        """Return fresh cached records for the request and the date ranges it does not cover."""
         if force:
             return [], [(startDate, endDate)]
         if self.refresh and cacheName not in self.refreshed:
             self.refreshed.add(cacheName)
             return [], [(startDate, endDate)]
-        entries = self.cache.get(cacheName, [])
-        if not isinstance(entries, list) or (entries and not isinstance(entries[0], dict)):
+        database = self.cache.connection
+        row = database.execute("SELECT id FROM searches WHERE name = ?", (cacheName,)).fetchone()
+        if row is None:
             return [], [(startDate, endDate)]
 
-        now = datetime.datetime.now()
-        kept = []
         fresh = []
-        for entry in entries:
-            time = datetime.datetime.fromisoformat(entry["created"])
-            stable = False
-            stableDate = entry.get("stable_date")
-            if stableDate is not None:
-                stable = (now -
-                          datetime.datetime.fromisoformat(stableDate)).total_seconds() > self.stableTime
-
-            refresh = refreshTime
-            if stableRefreshTime is not None and stable:
-                refresh = stableRefreshTime
-            if (now - time).total_seconds() >= refresh:
+        expired = []
+        for rangeId, rangeStart, rangeEnd, created, stableDate in database.execute(
+                "SELECT id, start_date, end_date, created, stable_date FROM search_ranges WHERE search_id = ?",
+                (row[0],)).fetchall():
+            if not self.isFresh(created, stableDate, refreshTime, stableRefreshTime):
+                expired.append(rangeId)
                 continue
-            kept.append(entry)
-
-            entryStart = self.parseDate(entry.get("start"))
-            entryEnd = self.parseDate(entry.get("end"))
-            fresh.append((datetime.date.min if entryStart is None else entryStart,
-                          datetime.date.max if entryEnd is None else entryEnd,
-                          entry["data"]))
-        if len(kept) != len(entries):
-            self.changed = True
-        if kept:
-            self.cache[cacheName] = kept
-        else:
-            self.cache.pop(cacheName, None)
+            rangeStart = self.parseDate(rangeStart)
+            rangeEnd = self.parseDate(rangeEnd)
+            fresh.append((datetime.date.min if rangeStart is None else rangeStart,
+                          datetime.date.max if rangeEnd is None else rangeEnd,
+                          rangeId))
+        if expired:
+            with database:
+                for rangeId in expired:
+                    self.deleteRange(rangeId)
 
         lower = datetime.date.min if startDate is None else startDate
         upper = datetime.date.max if endDate is None else endDate
@@ -277,113 +277,47 @@ class pyalex_cache:
                 gapEnd = None
             openGaps.append((gapStart, gapEnd))
 
+        #The records of each range used, in the order OpenAlex returned them, each once
         results = []
         seen = set()
         for item in used:
-            for result in item[2]:
-                if result["id"] in seen:
+            for (recordId,) in database.execute(
+                    "SELECT record_id FROM search_results WHERE range_id = ? ORDER BY position", (item[2],)).fetchall():
+                if recordId in seen:
                     continue
-                seen.add(result["id"])
-                results.append(result)
+                seen.add(recordId)
+                record = self.readRecord(tableFor(recordId), recordId)
+                if record is not None:
+                    results.append(record)
         return results, openGaps
 
     def setRangeCache(self, cacheName, data, startDate, endDate, stableDate=None):
-        """Store data and the date range it covers."""
-        entry = {
-            "created": datetime.datetime.now().isoformat(),
-            "start": startDate.isoformat() if startDate is not None else None,
-            "end": endDate.isoformat() if endDate is not None else None,
-            "stable_date": stableDate.isoformat() if isinstance(stableDate, datetime.date) else stableDate,
-            "data": data,
-        }
-        entries = self.cache.get(cacheName, [])
-        if not isinstance(entries, list) or (entries and not isinstance(entries[0], dict)):
-            entries = []
-        kept = []
-        for oldEntry in entries:
-            oldStart = self.parseDate(oldEntry.get("start"))
-            oldEnd = self.parseDate(oldEntry.get("end"))
-            if ((startDate is None or (oldStart is not None and startDate <= oldStart)) and
-                    (endDate is None or (oldEnd is not None and oldEnd <= endDate))):
-                continue
-            kept.append(oldEntry)
-        entries = kept
-        entries.append(entry)
-        self.cache[cacheName] = entries
-        self.changed = True
-
-    def coalesceCache(self, minRemaining):
-        """Combine overlapping stable date-range entries with at least minRemaining seconds before expiry."""
-        now = datetime.datetime.now()
-        for cacheName in list(self.cache):
-            entries = self.cache[cacheName]
-            if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
-                continue
-
-            kept = []
-            mergeable = []
-            for entry in entries:
-                time = datetime.datetime.fromisoformat(entry["created"])
-                stable = False
-                stableDate = entry.get("stable_date")
-                if stableDate is not None:
-                    stable = (now -
-                              datetime.datetime.fromisoformat(stableDate)).total_seconds() > self.stableTime
-
-                refresh = self.longCache if stable else self.shortCache
-                remaining = refresh - (now - time).total_seconds()
-                if remaining <= 0:
-                    continue
-                if not stable or remaining < minRemaining:
-                    kept.append(entry)
-                    continue
-
-                entryStart = self.parseDate(entry.get("start"))
-                entryEnd = self.parseDate(entry.get("end"))
-                mergeable.append((datetime.date.min if entryStart is None else entryStart,
-                                  datetime.date.max if entryEnd is None else entryEnd,
-                                  entry))
-            if not kept and not mergeable:
-                del self.cache[cacheName]
-                self.changed = True
-                continue
-
-            mergeable.sort(key=lambda item: item[0])
-            combined = []
-            for entryStart, entryEnd, entry in mergeable:
-                if combined and entryStart <= combined[-1][1]:
-                    lastStart, lastEnd, last = combined[-1]
-                    seen = set()
-                    for result in last["data"]:
-                        seen.add(result["id"])
-                    data = list(last["data"])
-                    for result in entry["data"]:
-                        if result["id"] not in seen:
-                            data.append(result)
-                    if entryEnd > lastEnd:
-                        lastEnd = entryEnd
-                        stableDate = entry["stable_date"]
-                    else:
-                        stableDate = last["stable_date"]
-                    combined[-1] = (lastStart, lastEnd, {
-                        "created": min(last["created"], entry["created"]),
-                        "start": last["start"],
-                        "end": None if lastEnd == datetime.date.max else lastEnd.isoformat(),
-                        "stable_date": stableDate,
-                        "data": data,
-                    })
-                else:
-                    combined.append((entryStart, entryEnd, entry))
-            for item in combined:
-                kept.append(item[2])
-            if len(kept) != len(entries):
-                self.changed = True
-            self.cache[cacheName] = kept
-
-    def setCache(self, cacheName, data, endDate=None):
-        """Store data under an exact cache key."""
-        self.cache[cacheName] = [datetime.datetime.now().isoformat(), endDate, data]
-        self.changed = True
+        """
+        Store the records a search returned and the date range they cover,
+        replacing any cached ranges of the same search that lie inside it.
+        """
+        database = self.cache.connection
+        with database:
+            database.execute("INSERT OR IGNORE INTO searches (name) VALUES (?)", (cacheName,))
+            searchId = database.execute("SELECT id FROM searches WHERE name = ?", (cacheName,)).fetchone()[0]
+            for rangeId, oldStart, oldEnd in database.execute(
+                    "SELECT id, start_date, end_date FROM search_ranges WHERE search_id = ?", (searchId,)).fetchall():
+                oldStart = self.parseDate(oldStart)
+                oldEnd = self.parseDate(oldEnd)
+                if ((startDate is None or (oldStart is not None and startDate <= oldStart)) and
+                        (endDate is None or (oldEnd is not None and oldEnd <= endDate))):
+                    self.deleteRange(rangeId)
+            rangeId = database.execute(
+                "INSERT INTO search_ranges (search_id, start_date, end_date, created, stable_date) VALUES (?, ?, ?, ?, ?)",
+                (searchId,
+                 startDate.isoformat() if startDate is not None else None,
+                 endDate.isoformat() if endDate is not None else None,
+                 datetime.datetime.now().isoformat(),
+                 stableDate.isoformat() if isinstance(stableDate, datetime.date) else stableDate)).lastrowid
+            for position, record in enumerate(data):
+                self.storeRecord(record, record.get('is_authors_truncated', False))
+                database.execute("INSERT INTO search_results (range_id, position, record_id) VALUES (?, ?, ?)",
+                                 (rangeId, position, record['id']))
 
     def searchCacheName(self, client, query, filter, dateFilter=None, mode="search"):
         """Build a cache key from a search and its non-range filters."""
@@ -617,18 +551,31 @@ class pyalex_cache:
         return results
 
     def getCore(self, query, client, dateFilter=None):
-        """Fetch an individual API object, using the exact-key cache."""
-        name = self.getCacheName(client, query)
-        cached = self.getCache(name, self.shortCache, self.longCache)
+        """
+        Fetch an individual API object by any identifier OpenAlex accepts for
+        it, such as a DOI, using the table of records for its kind. Which record
+        an identifier names, or that it names none, is kept as a lookup.
+        """
+        table = CLIENT_TABLES[type(client)]
+        name = "get_" + table + "_" + query
+        recordId = self.getCache(name, self.shortCache, self.longCache)
         if name in self.cache:
-            return cached
+            if recordId is None:
+                return None
+            record = self.readRecord(table, recordId, self.shortCache, self.longCache, True)
+            if record is not None:
+                return record
         try:
             result = client[query]
         except QueryError:
             print("Lookup failed for query:", query, file=sys.stderr)
             result = None
-        endDate = result.get(dateFilter, None) if result is not None else None
-        self.setCache(name, result, endDate)
+        if result is None:
+            self.setCache(name, None)
+            return None
+        with self.cache.connection:
+            self.storeRecord(result)
+        self.setCache(name, result['id'], result.get(dateFilter, None))
         return result
 
     def setAPIKey(self, key):
@@ -856,16 +803,22 @@ class pyalex_cache:
         return self.getCore(query, Institutions(), "created_date")
 
     def getManyCore(self, clientClass, ids, dateFilter, stage):
-        """Fetch many API objects by OpenAlex identifier, 100 per request, using the exact-key cache.
-        Progress is reported in the given stage, or not at all if it is None."""
-        client = clientClass()
+        """Fetch many API objects by OpenAlex identifier, full or short, 100 per request, using the table
+        of records for their kind. Progress is reported in the given stage, or not at all if it is None."""
+        table = CLIENT_TABLES[clientClass]
         found = {}
         missing = []
         for id in ids:
-            name = self.getCacheName(client, id)
-            cached = self.getCache(name, self.shortCache, self.longCache)
-            if name in self.cache:
-                found[id] = cached
+            fullId = id if id.startswith("https://") else "https://openalex.org/" + id
+            record = self.readRecord(table, fullId, self.shortCache, self.longCache, True)
+            if record is not None:
+                found[id] = record
+                continue
+            #An identifier that names nothing is remembered, so that it is not asked for again
+            missName = "missing_" + table + "_" + fullId
+            self.getCache(missName, self.shortCache)
+            if missName in self.cache:
+                found[id] = None
             else:
                 missing.append(id)
 
@@ -877,10 +830,14 @@ class pyalex_cache:
             returned = {}
             for result in results:
                 returned[result["id"].rsplit("/", 1)[-1]] = result
+            with self.cache.connection:
+                for result in returned.values():
+                    self.storeRecord(result)
             for shortId, id in batch.items():
                 result = returned.get(shortId)
-                endDate = result.get(dateFilter, None) if result is not None else None
-                self.setCache(self.getCacheName(client, id), result, endDate)
+                if result is None:
+                    fullId = id if id.startswith("https://") else "https://openalex.org/" + id
+                    self.setCache("missing_" + table + "_" + fullId, None)
                 found[id] = result
             if stage is not None:
                 self.report(stage, min(start + 100, len(missing)), len(missing))

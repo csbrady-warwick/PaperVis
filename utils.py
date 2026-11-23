@@ -238,6 +238,164 @@ def topic_name(c, level, topicId):
         return f"{level} {topicId}"
     return record['display_name']
 
+def works_per_year(items):
+    """
+    Return the number of works in `items` in each publication year, in order
+    and including years with none, keyed by the year as text.
+    """
+    counts = {}
+    for item in items:
+        year = item['publication_year']
+        counts[year] = counts.get(year, 0) + 1
+    filled = {}
+    if counts:
+        for year in range(min(counts), max(counts) + 1):
+            filled[str(year)] = counts.get(year, 0)
+    return filled
+
+def count_within(items, level, topicId):
+    """
+    Return the number of works in `items` per entry one level below the
+    field or subfield with the given short OpenAlex ID, as `level` says, among
+    all of each work's topics, each entry counted at most once per work. A
+    topic has nothing below it, so for a topic return the number of works per
+    other topic on the works.
+    """
+    counts = {}
+    for item in items:
+        names = set()
+        for topic in item.get('topics', []):
+            if level == "field":
+                if topic['field']['id'].rsplit("/", 1)[-1] == topicId:
+                    names.add(topic['subfield']['display_name'])
+            elif level == "subfield":
+                if topic['subfield']['id'].rsplit("/", 1)[-1] == topicId:
+                    names.add(topic['display_name'])
+            elif topic['id'].rsplit("/", 1)[-1] != topicId:
+                names.add(topic['display_name'])
+        for name in names:
+            counts[name] = counts.get(name, 0) + 1
+    return counts
+
+def h_index(citations):
+    """
+    Return the h-index of a list of citation counts: the largest h such that
+    h of the counts are at least h.
+    """
+    h = 0
+    for position, count in enumerate(sorted(citations, reverse=True), 1):
+        if count < position:
+            break
+        h = position
+    return h
+
+def count_open_access(items):
+    """
+    Return the number of works in `items` with each open-access status, most
+    common first, and the number with each status in each publication year.
+    """
+    counts = {}
+    yearly = {}
+    for item in items:
+        status = item['open_access']['oa_status']
+        year = item['publication_year']
+        counts[status] = counts.get(status, 0) + 1
+        yearly.setdefault(status, {})
+        yearly[status][year] = yearly[status].get(year, 0) + 1
+    return top_entries(counts, len(counts)), yearly
+
+def by_year(counts, yearly):
+    """
+    Return the publication years and, for each entry of `counts`, its number
+    of works in each year, including years with none.
+    """
+    years = set()
+    for entryYears in yearly.values():
+        years.update(entryYears)
+    years = sorted(years)
+    series = {}
+    for name in counts:
+        values = []
+        for year in years:
+            values.append(yearly[name].get(year, 0))
+        series[name] = values
+    return years, series
+
+def count_work_types(items):
+    """
+    Return the number of works in `items` of each type, such as article,
+    preprint or review, most common first.
+    """
+    counts = {}
+    for item in items:
+        counts[item['type']] = counts.get(item['type'], 0) + 1
+    return top_entries(counts, len(counts))
+
+def count_team_sizes(items):
+    """
+    Return the number of works in `items` with each number of authors, in
+    order of the number of authors, and the numbers of authors of the works
+    in each publication year. Works with long author lists should be passed
+    through full_works first.
+    """
+    counts = {}
+    yearly = {}
+    for item in items:
+        size = len(item['authorships'])
+        counts[size] = counts.get(size, 0) + 1
+        yearly.setdefault(item['publication_year'], []).append(size)
+    ordered = {}
+    for size in sorted(counts):
+        ordered[str(size)] = counts[size]
+    return ordered, yearly
+
+def mean_by_year(yearly):
+    """
+    Return the publication years and the mean number of authors per work in each.
+    """
+    years = sorted(yearly)
+    means = []
+    for year in years:
+        means.append(sum(yearly[year]) / len(yearly[year]))
+    return years, means
+
+def count_international(items):
+    """
+    Return the publication years and, for each, the number of works in `items`
+    with at least one known author country and the number of those with
+    authors in more than one country. Works with long author lists should be
+    passed through full_works first.
+    """
+    known = {}
+    international = {}
+    for item in items:
+        countries = set()
+        for authorship in item['authorships']:
+            countries.update(authorship.get('countries', []))
+        #A work with no known country cannot show collaboration either way, so it is left out
+        if not countries:
+            continue
+        year = item['publication_year']
+        known[year] = known.get(year, 0) + 1
+        if len(countries) > 1:
+            international[year] = international.get(year, 0) + 1
+    years = sorted(known)
+    knownCounts = []
+    internationalCounts = []
+    for year in years:
+        knownCounts.append(known[year])
+        internationalCounts.append(international.get(year, 0))
+    return years, knownCounts, internationalCounts
+
+def percentages(knownCounts, internationalCounts):
+    """
+    Return the percentage of works with authors in more than one country for each year.
+    """
+    values = []
+    for knownCount, internationalCount in zip(knownCounts, internationalCounts):
+        values.append(100 * internationalCount / knownCount)
+    return values
+
 def layout_network(nodes, links):
     """
     Give each node of a network a position for drawing, with closely linked

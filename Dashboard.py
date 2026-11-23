@@ -63,6 +63,9 @@ import WhoTheyCite
 import AffiliationHistory
 import AuthorFunders
 import InstitutionWorks
+import InstitutionSummary
+import InstitutionOutput
+import InstitutionBreakdown
 import InstitutionFunders
 import InstitutionVenues
 import InstitutionPartners
@@ -70,6 +73,18 @@ import InstitutionCountries
 import InstitutionNetwork
 import InstitutionCollaborators
 import InstitutionAuthors
+import CitingOpenAccess
+import CitingWorkTypes
+import CitingTeamSize
+import CitingInternational
+import AuthorOpenAccess
+import AuthorWorkTypes
+import AuthorTeamSize
+import AuthorInternational
+import InstitutionOpenAccess
+import InstitutionWorkTypes
+import InstitutionTeamSize
+import InstitutionInternational
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse, urlencode
 from http.cookies import SimpleCookie
@@ -116,6 +131,10 @@ TOOLS = [
     SelfCitations.TOOL,
     CitingVenues.TOOL,
     CitingInstitutionTypes.TOOL,
+    CitingOpenAccess.TOOL,
+    CitingWorkTypes.TOOL,
+    CitingTeamSize.TOOL,
+    CitingInternational.TOOL,
     AuthorContact.TOOL,
     AuthorSummary.TOOL,
     AuthorPublications.TOOL,
@@ -133,7 +152,14 @@ TOOLS = [
     WhoTheyCite.TOOL,
     AffiliationHistory.TOOL,
     AuthorFunders.TOOL,
+    AuthorOpenAccess.TOOL,
+    AuthorWorkTypes.TOOL,
+    AuthorTeamSize.TOOL,
+    AuthorInternational.TOOL,
     InstitutionWorks.TOOL,
+    InstitutionSummary.TOOL,
+    InstitutionOutput.TOOL,
+    InstitutionBreakdown.TOOL,
     InstitutionFunders.TOOL,
     InstitutionVenues.TOOL,
     InstitutionPartners.TOOL,
@@ -141,6 +167,10 @@ TOOLS = [
     InstitutionNetwork.TOOL,
     InstitutionCollaborators.TOOL,
     InstitutionAuthors.TOOL,
+    InstitutionOpenAccess.TOOL,
+    InstitutionWorkTypes.TOOL,
+    InstitutionTeamSize.TOOL,
+    InstitutionInternational.TOOL,
 ]
 
 TOOLS_BY_NAME = {}
@@ -566,15 +596,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             job["thread"].start()
             self.send_content(json.dumps({"job": jobId}), "application/json")
         elif url.path == "/authors":
-            self.send_candidates(author_candidates, parse_qs(url.query)["name"][0])
+            self.send_lookup(author_candidates, parse_qs(url.query)["name"][0])
         elif url.path == "/works":
-            self.send_candidates(work_candidates, parse_qs(url.query)["title"][0])
+            self.send_lookup(work_candidates, parse_qs(url.query)["title"][0])
         elif url.path == "/institutions":
-            self.send_candidates(institution_candidates, parse_qs(url.query)["name"][0])
+            self.send_lookup(institution_candidates, parse_qs(url.query)["name"][0])
         elif url.path == "/children":
             query = parse_qs(url.query)
-            self.send_candidates(lambda cache, level: topic_children(cache, level, query.get("parent", [""])[0]),
-                                 query["level"][0])
+            self.send_lookup(lambda cache, level: topic_children(cache, level, query.get("parent", [""])[0]),
+                             query["level"][0])
         elif url.path == "/topics":
             query = parse_qs(url.query)
             self.send_candidates(lambda cache, author: topic_suggestions(cache, author, query["from_date"][0],
@@ -607,6 +637,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         finally:
             self.server.cache.progress = progress
             self.server.cacheLock.release()
+        self.send_content(json.dumps(reply), "application/json")
+
+    def send_lookup(self, lookup, text):
+        """
+        Send the candidates for a find box or dropdown, or why the lookup
+        failed, as JSON, using the lookup cache, so that a running search does
+        not hold the lookup up. Lookups take turns with each other.
+        """
+        with self.server.lookupLock:
+            try:
+                reply = {"candidates": lookup(self.server.lookupCache, text), "error": None}
+                if self.server.args.use_cache:
+                    self.server.lookupCache.saveCache(self.server.args.cache_file)
+            except Exception as error:
+                traceback.print_exc()
+                reply = {"candidates": [], "error": f"Lookup failed: {describe_error(error)}"}
         self.send_content(json.dumps(reply), "application/json")
 
     def log_request(self, code="-", size="-"):
@@ -648,6 +694,9 @@ if __name__ == "__main__":
     server.args = args
     server.cache = open_cache(args)
     server.cacheLock = threading.Lock()
+    #Find boxes and dropdowns look things up through a second connection to the same cache file, so that they need not wait for a search
+    server.lookupCache = open_cache(args)
+    server.lookupLock = threading.Lock()
     #A token is only needed on a shared machine; --token with no value means make one up
     server.token = args.token
     if server.token == "":

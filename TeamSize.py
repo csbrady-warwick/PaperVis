@@ -14,7 +14,7 @@
 #   limitations under the License.
 
 from openalex_cli import CHECKBOX, add_options, open_cache
-from utils import search_works, full_works
+from utils import search_works, full_works, count_team_sizes, mean_by_year
 from plots import plot_lines, plot_columns
 from search_cli import make_search_parser
 
@@ -24,27 +24,7 @@ def team_sizes(c, search_term, from_date, to_date):
     order of the number of authors, and the numbers of authors of the works
     in each publication year.
     """
-    items = full_works(c, search_works(c, search_term, from_date, to_date))
-    counts = {}
-    yearly = {}
-    for item in items:
-        size = len(item['authorships'])
-        counts[size] = counts.get(size, 0) + 1
-        yearly.setdefault(item['publication_year'], []).append(size)
-    ordered = {}
-    for size in sorted(counts):
-        ordered[str(size)] = counts[size]
-    return ordered, yearly
-
-def mean_by_year(yearly):
-    """
-    Return the publication years and the mean number of authors per work in each.
-    """
-    years = sorted(yearly)
-    means = []
-    for year in years:
-        means.append(sum(yearly[year]) / len(yearly[year]))
-    return years, means
+    return count_team_sizes(full_works(c, search_works(c, search_term, from_date, to_date)))
 
 def views(c, search_term, from_date, to_date, options):
     """

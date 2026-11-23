@@ -14,7 +14,7 @@
 #   limitations under the License.
 
 from openalex_cli import CHECKBOX, add_options, open_cache
-from utils import search_works, top_entries
+from utils import search_works, count_open_access, by_year
 from plots import plot_pie, plot_lines
 from search_cli import make_search_parser
 
@@ -23,33 +23,7 @@ def open_access_counts(c, search_term, from_date, to_date):
     Return the number of matching works with each open-access status, most
     common first, and the number with each status in each publication year.
     """
-    items = search_works(c, search_term, from_date, to_date)
-    counts = {}
-    yearly = {}
-    for item in items:
-        status = item['open_access']['oa_status']
-        year = item['publication_year']
-        counts[status] = counts.get(status, 0) + 1
-        yearly.setdefault(status, {})
-        yearly[status][year] = yearly[status].get(year, 0) + 1
-    return top_entries(counts, len(counts)), yearly
-
-def by_year(counts, yearly):
-    """
-    Return the publication years and, for each entry of `counts`, its number
-    of works in each year, including years with none.
-    """
-    years = set()
-    for entryYears in yearly.values():
-        years.update(entryYears)
-    years = sorted(years)
-    series = {}
-    for name in counts:
-        values = []
-        for year in years:
-            values.append(yearly[name].get(year, 0))
-        series[name] = values
-    return years, series
+    return count_open_access(search_works(c, search_term, from_date, to_date))
 
 def views(c, search_term, from_date, to_date, options):
     """

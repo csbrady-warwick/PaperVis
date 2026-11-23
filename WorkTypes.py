@@ -14,7 +14,7 @@
 #   limitations under the License.
 
 from openalex_cli import open_cache
-from utils import search_works, top_entries
+from utils import search_works, count_work_types
 from plots import plot_pie
 from search_cli import make_search_parser
 
@@ -23,11 +23,7 @@ def work_types(c, search_term, from_date, to_date):
     Return the number of matching works of each type, such as article,
     preprint or review, most common first.
     """
-    items = search_works(c, search_term, from_date, to_date)
-    counts = {}
-    for item in items:
-        counts[item['type']] = counts.get(item['type'], 0) + 1
-    return top_entries(counts, len(counts))
+    return count_work_types(search_works(c, search_term, from_date, to_date))
 
 def views(c, search_term, from_date, to_date, options):
     """

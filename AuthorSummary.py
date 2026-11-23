@@ -15,19 +15,7 @@
 
 from openalex_cli import open_cache, write_table
 from author_cli import make_author_parser
-from utils import author_works
-
-def h_index(citations):
-    """
-    Return the h-index of a list of citation counts: the largest h such that
-    h of the counts are at least h.
-    """
-    h = 0
-    for position, count in enumerate(sorted(citations, reverse=True), 1):
-        if count < position:
-            break
-        h = position
-    return h
+from utils import author_works, h_index
 
 def author_summary(c, author_id, from_date, to_date):
     """

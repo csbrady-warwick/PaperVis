@@ -113,7 +113,7 @@ if __name__ == "__main__":
     # 3) use_cache - if set to 1, will use the cache, if set to 0, will not use the cache default 1
     # 4) output - The output filename for the generated map. default is pie.png
     # 5) apikey - The OpenAlex API key. default is no key
-    # 6) cache_file - The filename of the cache. default is cache.json.gz
+    # 6) cache_file - The filename of the cache. default is cache.db
     # 7) threshold - The threshold for combining small entries into "Other". default is 0.02 (2%)
     # 8) show_other - If set to 1, will show the "Other" category in the pie chart. If set to 0, will not show the "Other" category. Default is 1.
 

@@ -133,7 +133,7 @@ if __name__ == "__main__":
     # 3) use_cache - if set to 1, will use the cache, if set to 0, will not use the cache default 1
     # 4) output - The output filename for the network chart. default is co_author_network.png
     # 5) apikey - The OpenAlex API key. default is no key
-    # 6) cache_file - The filename of the cache. default is cache.json.gz
+    # 6) cache_file - The filename of the cache. default is cache.db
     # 7) depth - The number of steps out from the author, from 1 to 4. default is 2
     # 8) min_shared - Co-authors sharing fewer papers than this are not followed or linked; a comma-separated list such as 1,4,8 gives a value for each step out. default is 4
     # 9) max_authors - The most authors whose works are fetched. default is 200

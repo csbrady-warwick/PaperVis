@@ -112,7 +112,7 @@ if __name__ == "__main__":
     # 3) use_cache - if set to 1, will use the cache, if set to 0, will not use the cache default 1
     # 4) output - The output filename for the table. default is pairs.csv
     # 5) apikey - The OpenAlex API key. default is no key
-    # 6) cache_file - The filename of the cache. default is cache.json.gz
+    # 6) cache_file - The filename of the cache. default is cache.db
     # 7) level - The topic level to group by: topic, subfield, field or domain. default is topic
     # 8) min_count - Pairs with fewer works than this are left out of the table. default is 2
     # 9) top - The number of entries in the heatmap. default is 20

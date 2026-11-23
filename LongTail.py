@@ -96,7 +96,7 @@ if __name__ == "__main__":
     # 3) use_cache - if set to 1, will use the cache, if set to 0, will not use the cache default 1
     # 4) output - The output filename for the table. default is longtail.csv
     # 5) apikey - The OpenAlex API key. default is no key
-    # 6) cache_file - The filename of the cache. default is cache.json.gz
+    # 6) cache_file - The filename of the cache. default is cache.db
     # 7) level - The topic level to group by: topic, subfield, field or domain. default is topic
     # 8) all_topics - If set to 1, will use all of a work's topics. If set to 0, will use only the primary topic. Default is 0.
     # 9) threshold - Entries with this fraction of works or more are left out. default is 0.02 (2%)

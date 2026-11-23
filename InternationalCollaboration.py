@@ -14,7 +14,7 @@
 #   limitations under the License.
 
 from openalex_cli import open_cache
-from utils import search_works, full_works
+from utils import search_works, full_works, count_international, percentages
 from plots import plot_lines
 from search_cli import make_search_parser
 
@@ -24,36 +24,7 @@ def international_collaboration(c, search_term, from_date, to_date):
     with at least one known author country and the number of those with
     authors in more than one country.
     """
-    items = full_works(c, search_works(c, search_term, from_date, to_date))
-    known = {}
-    international = {}
-    for item in items:
-        countries = set()
-        for authorship in item['authorships']:
-            countries.update(authorship.get('countries', []))
-        #A work with no known country cannot show collaboration either way, so it is left out
-        if not countries:
-            continue
-        year = item['publication_year']
-        known[year] = known.get(year, 0) + 1
-        if len(countries) > 1:
-            international[year] = international.get(year, 0) + 1
-    years = sorted(known)
-    knownCounts = []
-    internationalCounts = []
-    for year in years:
-        knownCounts.append(known[year])
-        internationalCounts.append(international.get(year, 0))
-    return years, knownCounts, internationalCounts
-
-def percentages(knownCounts, internationalCounts):
-    """
-    Return the percentage of works with authors in more than one country for each year.
-    """
-    values = []
-    for knownCount, internationalCount in zip(knownCounts, internationalCounts):
-        values.append(100 * internationalCount / knownCount)
-    return values
+    return count_international(full_works(c, search_works(c, search_term, from_date, to_date)))
 
 def views(c, search_term, from_date, to_date, options):
     """

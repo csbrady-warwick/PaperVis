@@ -217,7 +217,7 @@ if __name__ == "__main__":
     # 3) use_cache - if set to 1, will use the cache, if set to 0, will not use the cache default 1
     # 4) output - The output filename for the network chart. default is possible_reviewers.png
     # 5) apikey - The OpenAlex API key. default is no key
-    # 6) cache_file - The filename of the cache. default is cache.json.gz
+    # 6) cache_file - The filename of the cache. default is cache.db
     # 7) min_shared - Only co-authors sharing at least this many papers with the author are followed. default is 4
     # 8) conflict_years - Anyone who has published with the author in this many years is left out. default is 5
     # 9) min_career_years - Candidates who first published fewer than this many years ago are left out. default is 5

@@ -79,7 +79,7 @@ The results are shown as interactive charts and tables. Clicking a column headin
 
 The page address records the search, so a search can be bookmarked, reloaded or shared with someone running their own copy of the dashboard. Adding `&run=0` to an address fills in the form without starting the search. The API key is never part of the address.
 
-Searches can be run from several browser windows at once; they take turns using the cache, and a search waiting for another says so. The find boxes are unavailable while any search is running. If a search fails, the reason is shown on the page and a full description is printed in the window where the dashboard is running.
+Searches can be run from several browser windows at once; they take turns using the cache, and a search waiting for another says so. The find boxes and the Institution tab's dropdowns can be used at any time, even while a search is running. If a search fails, the reason is shown on the page and a full description is printed in the window where the dashboard is running.
 
 ## Command line tools
 
@@ -270,6 +270,10 @@ python CitationTimeline.py 10.xxxx/xxxxx --from 2015-01-01 --to 2024-12-31 --by 
 
 `SelfCitations.py` reports how many of the citing works share an author with the paper, and writes a table of those works with the shared authors (`--output`, default `self_citations.csv`).
 
+### Open access, work types, team size and international collaboration of citing works
+
+`CitingOpenAccess.py`, `CitingWorkTypes.py`, `CitingTeamSize.py` and `CitingInternational.py` do for the citing works what `OpenAccess.py`, `WorkTypes.py`, `TeamSize.py` and `InternationalCollaboration.py` do for a keyword, with the same options, and write `citing_open_access.png`, `citing_work_types.png`, `citing_team_size.png` and `citing_international.png`.
+
 ## Author tools
 
 Each author tool takes an author as its first argument: their OpenAlex author ID, such as `A5023888391`, or their ORCID, such as `0000-0002-1825-0097`, each with or without its URL prefix. `--from` and `--to` select the publication dates of the author's works.
@@ -308,7 +312,7 @@ python AuthorPublications.py 0000-0002-1825-0097 --from 2015-01-01 --to 2024-12-
 
 ### Co-author network
 
-`CoAuthorNetwork.py` draws the network of co-authorship around the author: their co-authors, the co-authors of those, and so on for `--depth` steps (`1` to `4`, default `2`). Only co-authors sharing at least `--min_shared` papers (default `4`) are followed and linked, and at most `--max_authors` authors (default `200`) are looked at. It writes an image of the network (`--output`, default `co_author_network.png`), a table of the authors (`--table`, default `co_author_network.csv`) and a table of the links (`--links`, default `co_author_links.csv`).
+`CoAuthorNetwork.py` draws the network of co-authorship around the author: their co-authors, the co-authors of those, and so on for `--depth` steps (`1` to `4`, default `2`). Only co-authors sharing at least `--min_shared` papers (default `4`) are followed and linked; a comma-separated list such as `1,4,8` gives a value for each step out from the author, the last carrying on to any further steps. At most `--max_authors` authors (default `200`) are looked at. It writes an image of the network (`--output`, default `co_author_network.png`), a table of the authors (`--table`, default `co_author_network.csv`) and a table of the links (`--links`, default `co_author_links.csv`).
 
 ```sh
 python CoAuthorNetwork.py 0000-0002-1825-0097 --from 2015-01-01 --to 2024-12-31 --depth 2
@@ -345,6 +349,10 @@ Both leave out the author's citations of their own work unless `--include_self 1
 
 `AuthorFunders.py` counts the author's works per funder. It writes a bar chart image of the `--top` funders (default `20`) and a table of all funders (`--table`, default `author_funders.csv`). As for `FunderSearch.py`, the counts are lower bounds.
 
+### Open access, work types, team size and international collaboration
+
+`AuthorOpenAccess.py`, `AuthorWorkTypes.py`, `AuthorTeamSize.py` and `AuthorInternational.py` do for the author's works what `OpenAccess.py`, `WorkTypes.py`, `TeamSize.py` and `InternationalCollaboration.py` do for a keyword, with the same options, and write `author_open_access.png`, `author_work_types.png`, `author_team_size.png` and `author_international.png`.
+
 ## Institution tools
 
 Each institution tool takes an institution as its first argument: its OpenAlex institution ID, such as `I39555362`, or its ROR ID. Exactly one of `--field`, `--subfield` or `--topic` must also be given, with the OpenAlex ID of the field, subfield or topic, such as `--field 17` for Computer Science. A work belongs to the institution when the institution is among its corresponding authors' institutions, and to the field, subfield or topic when any of its topics falls within it. `--from` and `--to` select the publication dates of the works.
@@ -356,6 +364,12 @@ Each institution tool takes an institution as its first argument: its OpenAlex i
 ```sh
 python InstitutionWorks.py I39555362 --field 17 --from 2024-01-01 --to 2024-12-31
 ```
+
+### Summary, works per year and breakdown
+
+- `InstitutionSummary.py` reports the number of works, their total and mean citations, and their h-index and i10-index, alongside OpenAlex's figures for the whole institution in all fields. It prints them and writes them to a table (`--output`, default `institution_summary.csv`).
+- `InstitutionOutput.py` counts the works per publication year, including years with none, and writes `institution_output.png` and `institution_output.csv` (`--table`).
+- `InstitutionBreakdown.py` counts the works by the subfields within the chosen field, or the topics within the chosen subfield, using all of each work's topics within it; for a chosen topic, which has nothing below it, it counts the other topics on the works. It writes a bar chart image of the `--top` entries (default `20`) and a table (`institution_breakdown.png` and `institution_breakdown.csv`).
 
 ### Funders and journals
 
@@ -377,9 +391,13 @@ python InstitutionWorks.py I39555362 --field 17 --from 2024-01-01 --to 2024-12-3
 
 For each person they give the number of works and the institutions listed on them. As for the partner network, works with more than `--max_authors` authors (default `10`, at most `99`) are left out. Each writes a bar chart image of the `--top` people (default `20`) and a table (`institution_collaborators.png` and `institution_collaborators.csv`, or `institution_authors.png` and `institution_authors.csv`).
 
+### Open access, work types, team size and international collaboration
+
+`InstitutionOpenAccess.py`, `InstitutionWorkTypes.py`, `InstitutionTeamSize.py` and `InstitutionInternational.py` do for the institution's works what `OpenAccess.py`, `WorkTypes.py`, `TeamSize.py` and `InternationalCollaboration.py` do for a keyword, with the same options, and write `institution_open_access.png`, `institution_work_types.png`, `institution_team_size.png` and `institution_international.png`.
+
 ## Options
 
-All tools apart from `FindAuthor.py` accept `--from` and `--to` publication dates in `YYYY-MM-DD` format. By default, the date range is approximately the previous year, caching is enabled, and the cache file is `cache.json.gz`.
+All tools apart from `FindAuthor.py` accept `--from` and `--to` publication dates in `YYYY-MM-DD` format. By default, the date range is approximately the previous year, caching is enabled, and the cache file is `cache.db`.
 
 - `--use_cache 0` disables loading and saving the cache.
 - `--cache_file PATH` selects a cache file.
@@ -395,4 +413,4 @@ The tools that group works by research field (`LongTail.py`, `FieldGrowth.py`, `
 
 This project uses a local cache to avoid repeated queries to the OpenAlex API. Only the parts of a date range that are missing from the cache, or have expired, are fetched; results more than about 100 days old are kept for a month, more recent ones for an hour.
 
-Because of this, the time a search takes is unpredictable. The same search can finish almost at once when everything it needs is cached, and take minutes when it has to be fetched from OpenAlex, depending on what earlier searches have already fetched and how long ago. The cache is stored in a JSON file, which is compressed with gzip. By default, the cache file is named `cache.json.gz`, but you can specify a different filename with the `--cache_file` option. This cache should work as expected, but at present it shouldn't be considered production-ready. If you encounter any issues, please report them.
+Because of this, the time a search takes is unpredictable. The same search can finish almost at once when everything it needs is cached, and take minutes when it has to be fetched from OpenAlex, depending on what earlier searches have already fetched and how long ago. The cache is stored in an SQLite database file. By default, the cache file is named `cache.db`, but you can specify a different filename with the `--cache_file` option. This cache should work as expected, but at present it shouldn't be considered production-ready. If you encounter any issues, please report them.
