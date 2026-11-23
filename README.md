@@ -407,6 +407,8 @@ All tools apart from `FindAuthor.py` accept `--from` and `--to` publication date
 
 `FieldPie.py` also accepts `--threshold FRACTION` to group smaller topics as "Other" (default `0.02`), and `--show_other 0` to omit that category from the chart.
 
+The tools that draw a map of institutions (`MapSearch.py`, `CitingInstitutions.py`, `CoAuthorMap.py` and `InstitutionPartners.py`) accept `--min_works` (default `2`): institutions with fewer works than this are not pinned on the map, though they are still listed in the table.
+
 The tools that group works by research field (`LongTail.py`, `FieldGrowth.py`, `CitationStats.py`, `TopicPairs.py`, `CitingFields.py`, `CitingLongTail.py` and `AuthorFields.py`) accept `--level` to choose how broadly fields are grouped: `topic` (the default), `subfield`, `field` or `domain`. Except for `TopicPairs.py`, they also accept `--all_topics 1` to count all of a work's topics rather than only its primary topic.
 
 ## The Cache

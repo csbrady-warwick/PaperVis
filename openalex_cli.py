@@ -85,6 +85,9 @@ LEVEL_OPTION = {"name": "level", "label": "Level",
 ALL_TOPICS_OPTION = {"name": "all_topics", "label": "Use all topics",
                      "help": "Use all of a work's topics. 1 to use all topics, 0 to use only the primary topic. Default is 0.",
                      "default": 0, "type": int, "choices": CHECKBOX}
+MIN_WORKS_OPTION = {"name": "min_works", "label": "Minimum works for a pin on the map",
+                    "help": "Institutions with fewer works than this are not pinned on the map. Default is 2.",
+                    "default": 2, "type": int, "choices": None}
 
 def add_options(parser, options):
     """

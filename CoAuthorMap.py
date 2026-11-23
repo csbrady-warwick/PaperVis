@@ -13,9 +13,9 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-from openalex_cli import open_cache, write_table
+from openalex_cli import MIN_WORKS_OPTION, add_options, open_cache, write_table
 from author_cli import make_author_parser
-from utils import author_works
+from utils import author_works, map_entries
 from plots import plot_map
 
 def co_author_institutions(c, author_id, from_date, to_date):
@@ -58,7 +58,7 @@ def views(c, author_id, from_date, to_date, options):
     return [
         {"kind": "institution_map",
          "title": f"Institutions of co-authors of {author['display_name']} from {from_date} to {to_date}",
-         "data": imap},
+         "data": map_entries(imap, options["min_works"])},
         {"kind": "table", "header": ["Institution", "Shared works", "OpenAlex ID"],
          "types": [None, None, "asLink"], "rows": rows},
     ]
@@ -67,7 +67,7 @@ TOOL = {
     "name": "co_author_map",
     "label": "Co-author institutions",
     "input": "author",
-    "options": [],
+    "options": [MIN_WORKS_OPTION],
     "views": views,
 }
 
@@ -82,10 +82,12 @@ if __name__ == "__main__":
     # 5) apikey - The OpenAlex API key. default is no key
     # 6) cache_file - The filename of the cache. default is cache.db
     # 7) table - The output filename for the table. default is co_author_institutions.csv
+    # 8) min_works - Institutions with fewer works than this are not pinned on the map. default is 2
 
     #Parse keyword arguments using argparse
     parser = make_author_parser()
     parser.set_defaults(output_file="co_author_map.html")
+    add_options(parser, TOOL["options"])
     parser.add_argument("--table", dest="table_file", default="co_author_institutions.csv", help="Output filename for the table. Default is co_author_institutions.csv.")
     args = parser.parse_args()
 
@@ -99,5 +101,5 @@ if __name__ == "__main__":
     for id, value in sorted(imap.items(), key=lambda item: item[1][0], reverse=True):
         rows.append([id, value[1], value[0]])
     write_table(args.table_file, ["id", "name", "count"], rows)
-    plot_map(imap, args.output_file,
+    plot_map(map_entries(imap, args.min_works), args.output_file,
              f"Institutions of co-authors of {author['display_name']} from {args.from_date} to {args.to_date}")

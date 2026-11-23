@@ -538,6 +538,17 @@ def count_institutions(c, items, excludeId):
         imap[id][2] = institutions[id]['geo'] if institutions[id] else None
     return imap
 
+def map_entries(imap, min_works):
+    """
+    Return the institutions of a map, each as [count, name, location], that
+    have at least `min_works` works.
+    """
+    entries = {}
+    for id, value in imap.items():
+        if value[0] >= min_works:
+            entries[id] = value
+    return entries
+
 def count_institution_pairs(items, institutionIds):
     """
     Return the number of works in `items` on which both of a pair of the

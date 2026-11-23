@@ -61,10 +61,6 @@ def views(c, identifier, from_date, to_date, options):
     institution, nodes, links, used, found = institution_network(
         c, identifier, options["topic_level"], options["topic_id"], from_date, to_date,
         options["max_authors"], options["max_institutions"], options["min_shared"])
-    #Institutions have nothing to open in the dashboard, so clicking one does nothing
-    for node in nodes.values():
-        node["link"] = None
-        node["hover"] = f"Works: {node['works']}"
     institutionRows = []
     for id, node in sorted(nodes.items(), key=lambda item: (item[1]["depth"], -item[1]["works"])):
         institutionRows.append([node["name"], node["works"], id])
@@ -78,7 +74,7 @@ def views(c, identifier, from_date, to_date, options):
         {"kind": "network",
          "title": f"Partner network of {institution['display_name']} in {options['topic_name']} "
                   f"from {from_date} to {to_date}",
-         "nodes": nodes, "links": links, "groupNames": GROUP_NAMES},
+         "nodes": nodes, "links": links, "groupNames": GROUP_NAMES, "nodeKind": "institution"},
         {"kind": "table", "header": ["Institution", "Shared works", "OpenAlex ID"],
          "types": [None, None, "asLink"], "rows": institutionRows},
         {"kind": "table", "header": ["Institution", "Institution", "Shared works"], "rows": linkRows},

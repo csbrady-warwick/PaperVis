@@ -13,8 +13,8 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-from openalex_cli import open_cache, write_table
-from utils import full_works, count_institutions, institution_works, topic_name
+from openalex_cli import MIN_WORKS_OPTION, add_options, open_cache, write_table
+from utils import full_works, count_institutions, institution_works, topic_name, map_entries
 from institution_cli import make_institution_parser, topic_choice
 from plots import plot_map
 
@@ -40,7 +40,7 @@ def views(c, identifier, from_date, to_date, options):
         {"kind": "institution_map",
          "title": f"Partner institutions of {institution['display_name']} in {options['topic_name']} "
                   f"from {from_date} to {to_date}",
-         "data": imap},
+         "data": map_entries(imap, options["min_works"])},
         {"kind": "table", "header": ["Institution", "Shared works", "OpenAlex ID"],
          "types": [None, None, "asLink"], "rows": rows},
     ]
@@ -49,7 +49,7 @@ TOOL = {
     "name": "institution_partners",
     "label": "Partner institutions",
     "input": "institution",
-    "options": [],
+    "options": [MIN_WORKS_OPTION],
     "views": views,
 }
 
@@ -65,10 +65,12 @@ if __name__ == "__main__":
     # 6) apikey - The OpenAlex API key. default is no key
     # 7) cache_file - The filename of the cache. default is cache.db
     # 8) table - The output filename for the table. default is institution_partners.csv
+    # 9) min_works - Institutions with fewer works than this are not pinned on the map. default is 2
 
     #Parse keyword arguments using argparse
     parser = make_institution_parser()
     parser.set_defaults(output_file="institution_partners.html")
+    add_options(parser, TOOL["options"])
     parser.add_argument("--table", dest="table_file", default="institution_partners.csv", help="Output filename for the table. Default is institution_partners.csv.")
     args = parser.parse_args()
 
@@ -84,5 +86,5 @@ if __name__ == "__main__":
     for id, value in sorted(imap.items(), key=lambda item: item[1][0], reverse=True):
         rows.append([id, value[1], value[0]])
     write_table(args.table_file, ["id", "name", "count"], rows)
-    plot_map(imap, args.output_file,
+    plot_map(map_entries(imap, args.min_works), args.output_file,
              f"Partner institutions of {institution['display_name']} in {topicName} from {args.from_date} to {args.to_date}")

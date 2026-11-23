@@ -236,6 +236,16 @@ def render_network(view):
             ys.append(node["y"])
             sizes.append(10 if node["works"] is None else 10 + 2 * math.sqrt(node["works"]))
             names.append(node["name"])
+            #Clicking an institution fills in the Institution tab with it, for the same area and dates, without searching
+            if view.get("nodeKind") == "institution":
+                query = view["query"]
+                hoverText.append(f"<b>{html.escape(node['name'])}</b><br>Works: {node['works']}<br>Click to open this institution")
+                addresses.append("/?" + urlencode({"mode": "institution", "institution": id.rsplit("/", 1)[-1],
+                                                   "domain": query["domain"], "field": query["field"],
+                                                   "subfield": query["subfield"], "topic": query["topic"],
+                                                   "from_date": query["from_date"], "to_date": query["to_date"],
+                                                   "run": "0"}))
+                continue
             #A view can give a node its own hover text and link, None for no link
             if "link" in node:
                 hoverText.append(f"<b>{html.escape(node['name'])}</b><br>{html.escape(node['hover'])}")

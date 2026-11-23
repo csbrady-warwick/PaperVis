@@ -343,7 +343,7 @@ def page(form, result):
 </div>
 <form class="toolform" data-mode="search" method="get" action="/">
 <input type="hidden" name="mode" value="search">
-<label>Search term <input name="search_term" value="{html.escape(form['search_term'])}"></label>
+<label>Search term <input name="search_term" value="{html.escape(form['search_term'])}" required></label>
 <label>From <input type="date" name="from_date" value="{html.escape(form['from_date'])}"></label>
 <label>To <input type="date" name="to_date" value="{html.escape(form['to_date'])}"></label>
 {tool_controls(tools_for("search"), form)}

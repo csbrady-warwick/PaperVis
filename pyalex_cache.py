@@ -399,6 +399,8 @@ class pyalex_cache:
         """Return the number of results of a search, or None if search progress is not being reported."""
         if self.progress is None or (self.reportedStages is not None and "search" not in self.reportedStages):
             return None
+        #A pyalex request keeps every parameter added to it, so each request starts from a fresh one
+        client = type(client)()
         if mode == "exact":
             request = client.exact(query)
         elif mode == "filter":
@@ -416,6 +418,8 @@ class pyalex_cache:
 
     def pages(self, client, query, filter, mode):
         """Create the paginated request for a search of the given mode: "search", "exact" or "filter"."""
+        #A pyalex request keeps every parameter added to it, so each request starts from a fresh one
+        client = type(client)()
         if mode == "exact":
             return self.exact(client, query, filter, self.defaultPerPage)
         if mode == "filter":

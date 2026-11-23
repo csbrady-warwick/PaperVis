@@ -14,98 +14,11 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-from openalex_cli import open_cache
-from utils import search_works
+from openalex_cli import MIN_WORKS_OPTION, add_options, open_cache
+from utils import search_works, map_entries
+from plots import plot_map
 from search_cli import make_search_parser
 import sys
-import plotly.graph_objects as go
-
-def plot_map(data, output_path, search_term, from_date, to_date):
-    longitudes = []
-    latitudes = []
-    labels = []
-    hover_text = []
-    urls = []
-
-    for key, value in data.items():
-        if not isinstance(value, list) or len(value) < 3:
-            continue
-
-        number, name, info = value[:3]
-
-        if not isinstance(info, dict):
-            continue
-
-        try:
-            latitude = float(info["latitude"])
-            longitude = float(info["longitude"])
-        except (KeyError, TypeError, ValueError):
-            continue
-
-        latitudes.append(latitude)
-        longitudes.append(longitude)
-        labels.append(str(number))
-        urls.append(str(key))
-
-        hover_text.append(
-            f"<b>{name}</b><br>"
-            f"Number: {number}<br>"
-            f"Click to open OpenAlex URL"
-        )
-
-    figure = go.Figure(
-        go.Scattergeo(
-            lon=longitudes,
-            lat=latitudes,
-            text=labels,
-            customdata=urls,
-            hovertext=hover_text,
-            hoverinfo="text",
-            mode="markers+text",
-            textposition="middle center",
-            marker={
-                "size": 24,
-                "color": "white",
-                "line": {"color": "black", "width": 1},
-            },
-        )
-    )
-
-    figure.update_geos(
-        showland=True,
-        landcolor="lightgray",
-        showocean=True,
-        oceancolor="lightblue",
-        showcountries=True,
-        countrycolor="white",
-        coastlinecolor="gray",
-        projection_type="natural earth",
-    )
-
-    figure.update_layout(
-        title=f"Institutions publishing papers using \"{search_term}\" in the abstract or title between {from_date} and {to_date} (inclusive)",
-        height=700,
-        margin={"l": 0, "r": 0, "t": 50, "b": 0},
-    )
-
-    click_script = """
-    var plot = document.getElementById('{plot_id}');
-    plot.on('plotly_click', function(data) {
-        var url = data.points[0].customdata;
-
-        if (url) {
-            window.open(url, '_blank', 'noopener,noreferrer');
-        }
-    });
-    """
-
-    figure.write_html(
-        output_path,
-        include_plotlyjs=True,
-        post_script=click_script,
-    )
-
-    print(f"Map written to {output_path}")
 
 def institution_counts(c, search_term, from_date, to_date):
     """
@@ -142,7 +55,7 @@ def views(c, search_term, from_date, to_date, options):
     return [
         {"kind": "institution_map",
          "title": f"Institutions publishing papers containing '{search_term}' from {from_date} to {to_date}",
-         "data": imap},
+         "data": map_entries(imap, options["min_works"])},
         {"kind": "table", "header": ["Institution", "Works", "OpenAlex ID"],
          "types": [None, None, "asLink"], "rows": rows},
     ]
@@ -151,7 +64,7 @@ TOOL = {
     "name": "map",
     "label": "Institution map",
     "input": "search",
-    "options": [],
+    "options": [MIN_WORKS_OPTION],
     "views": views,
 }
 
@@ -165,10 +78,12 @@ if __name__ == "__main__":
     # 4) output - The output filename for the generated map. default is map.html
     # 5) apikey - The OpenAlex API key. default is no key
     # 6) cache_file - The filename of the cache. default is cache.db
+    # 7) min_works - Institutions with fewer works than this are not pinned on the map. default is 2
 
     #Parse keyword arguments using argparse
     parser = make_search_parser()
     parser.set_defaults(output_file="map.html")
+    add_options(parser, TOOL["options"])
     args = parser.parse_args()
 
     c = open_cache(args)
@@ -177,4 +92,6 @@ if __name__ == "__main__":
     if args.use_cache:
         c.saveCache(args.cache_file)
 
-    plot_map(imap, args.output_file, args.search_term, args.from_date, args.to_date)
+    plot_map(map_entries(imap, args.min_works), args.output_file,
+             f"Institutions publishing papers using \"{args.search_term}\" in the abstract or title "
+             f"between {args.from_date} and {args.to_date} (inclusive)")
